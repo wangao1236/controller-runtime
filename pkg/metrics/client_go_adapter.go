@@ -31,9 +31,10 @@ import (
 
 // Metrics subsystem and all of the keys used by the rest client.
 const (
-	RestClientSubsystem = "rest_client"
-	LatencyKey          = "request_latency_seconds"
-	ResultKey           = "requests_total"
+	RestClientSubsystem   = "rest_client"
+	RateLimiterLatencyKey = "rate_limiter_duration_seconds"
+	LatencyKey            = "request_latency_seconds"
+	ResultKey             = "requests_total"
 )
 
 // Metrics subsystem and all keys used by the reflectors.
@@ -55,7 +56,7 @@ var (
 		Subsystem: RestClientSubsystem,
 		Name:      LatencyKey,
 		Help:      "Request latency in seconds. Broken down by verb and URL.",
-		Buckets:   prometheus.ExponentialBuckets(0.001, 2, 10),
+		Buckets:   prometheus.ExponentialBuckets(0.001, 2, 17),
 	}, []string{"verb", "url"})
 
 	requestResult = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -63,6 +64,16 @@ var (
 		Name:      ResultKey,
 		Help:      "Number of HTTP requests, partitioned by status code, method, and host.",
 	}, []string{"code", "method", "host"})
+
+	rateLimiterLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: RestClientSubsystem,
+			Name:      RateLimiterLatencyKey,
+			Help:      "Client side rate limiter latency in seconds. Broken down by verb and URL.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 17),
+		},
+		[]string{"verb", "url"},
+	)
 
 	// reflector metrics
 
@@ -128,11 +139,13 @@ func registerClientMetrics() {
 	// register the metrics with our registry
 	Registry.MustRegister(requestLatency)
 	Registry.MustRegister(requestResult)
+	Registry.MustRegister(rateLimiterLatency)
 
 	// register the metrics with client-go
 	clientmetrics.Register(clientmetrics.RegisterOpts{
-		RequestLatency: &latencyAdapter{metric: requestLatency},
-		RequestResult:  &resultAdapter{metric: requestResult},
+		RequestLatency:     &latencyAdapter{metric: requestLatency},
+		RequestResult:      &resultAdapter{metric: requestResult},
+		RateLimiterLatency: &latencyAdapter{metric: rateLimiterLatency},
 	})
 }
 
